@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 import axios from 'axios';
 
@@ -11,9 +10,21 @@ axios.interceptors.request.use((config) => {
   return config;
 }, (error) => Promise.reject(error));
 
-import { DjangoAddress } from '@/utils/products.types';
-import { DjangoOrderCreate, Order } from '@/utils/products.types';
-import { getBestSellers } from '@/utils/products';
+/* Removed problematic imports for missing modules */
+// import { DjangoAddress } from 'utils/products.types';
+// import { DjangoOrderCreate, Order } from 'utils/products.types';
+// import { getBestSellers } from 'utils/products';
+
+// Define CartItem type for cart API calls
+export type CartItem = {
+  product: {
+    id: string;
+    name: string;
+    price: number;
+    // Add other product fields as needed
+  };
+  quantity: number;
+};
 
 // Base API URL - you'll need to change this to your Django backend URL
 export const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
@@ -258,6 +269,7 @@ export async function apiRequest<T>(
     throw error;
   }
 }
+
 // Auth API endpoints
 export const authService = {
   // Refresh the JWT using the refresh token
@@ -342,4 +354,20 @@ export const ordersService = {
   
   getOrderById: (id: string) => 
     apiRequest<Order>(`orders/${id}/`),
+
+  // Cart API endpoints to be added below
+  getUserCart: () =>
+    apiRequest<CartItem[]>('cart/', 'GET'),
+
+  addItemToCart: (productId: string, quantity: number) =>
+    apiRequest('cart/add/', 'POST', { product_id: productId, quantity }),
+
+  removeItemFromCart: (productId: string) =>
+    apiRequest('cart/remove/', 'POST', { product_id: productId }),
+
+  updateItemQuantity: (productId: string, quantity: number) =>
+    apiRequest('cart/update/', 'POST', { product_id: productId, quantity }),
+
+  mergeCart: (guestCart: CartItem[]) =>
+    apiRequest('cart/merge/', 'POST', { items: guestCart }),
 };
