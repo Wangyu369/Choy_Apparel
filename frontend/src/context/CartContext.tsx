@@ -1,7 +1,8 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Product } from '../utils/products';
+import { useAuth } from './AuthContext';
+import { ordersService } from '../services/api';
 
 type CartItem = {
   product: Product;
@@ -16,6 +17,7 @@ type CartContextType = {
   clearCart: () => void;
   totalItems: number;
   totalPrice: number;
+  setItems: React.Dispatch<React.SetStateAction<CartItem[]>>;
 };
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -30,40 +32,100 @@ export const useCart = () => {
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([]);
-  
-  // Load cart from localStorage on initial render
-  useEffect(() => {
-    const storedCart = localStorage.getItem('cart');
-    if (storedCart) {
-      try {
-        setItems(JSON.parse(storedCart));
-      } catch (error) {
-        console.error('Failed to parse stored cart:', error);
-        localStorage.removeItem('cart');
+  const { user, isAuthenticated } = useAuth();
+
+  const mergeCarts = (cartA: CartItem[], cartB: CartItem[]): CartItem[] => {
+    const mergedMap = new Map<string, CartItem>();
+    cartA.forEach(item => mergedMap.set(item.product.id, { ...item }));
+    cartB.forEach(item => {
+      if (mergedMap.has(item.product.id)) {
+        mergedMap.get(item.product.id)!.quantity += item.quantity;
+      } else {
+        mergedMap.set(item.product.id, { ...item });
       }
-    }
-  }, []);
-  
-  // Save cart to localStorage whenever it changes
+    });
+    return Array.from(mergedMap.values());
+  };
+
+  useEffect(() => {
+    const loadCart = async () => {
+      const storedCart = localStorage.getItem('cart');
+      let localCart: CartItem[] = [];
+      if (storedCart) {
+        try {
+          localCart = JSON.parse(storedCart);
+        } catch (error) {
+          console.error('Failed to parse stored cart:', error);
+          localStorage.removeItem('cart');
+        }
+      }
+
+      if (isAuthenticated && user) {
+        try {
+          // Merge guest cart items into backend cart using mergeCart API
+          await ordersService.mergeCart(localCart);
+          // Fetch merged cart from backend
+          const backendCart = await ordersService.getUserCart();
+          console.log('Backend cart fetched on login:', backendCart);
+          const mappedBackendCart = backendCart.map((item: any) => ({
+            product: item.product_details,
+            quantity: item.quantity,
+          }));
+          setItems(mappedBackendCart);
+          // Clear localStorage cart after merging
+          localStorage.removeItem('cart');
+        } catch (error) {
+          console.error('Failed to load user cart:', error);
+          setItems(localCart);
+        }
+      } else {
+        setItems(localCart);
+      }
+    };
+    loadCart();
+  }, [isAuthenticated, user]);
+
+// Add logout handler to clear cart on logout
+useEffect(() => {
+  if (!isAuthenticated) {
+    setItems([]);
+    localStorage.removeItem('cart');
+  }
+}, [isAuthenticated]);
+
+  // On sign-up, set cart from backend returned cart (handled in AuthContext or sign-up flow)
+
   useEffect(() => {
     localStorage.setItem('cart', JSON.stringify(items));
   }, [items]);
 
+  useEffect(() => {
+    const syncCartToBackend = async () => {
+      if (isAuthenticated && user) {
+        try {
+          for (const item of items) {
+            await ordersService.addItemToCart(item.product.id, item.quantity);
+          }
+        } catch (error) {
+          console.error('Failed to sync cart to backend:', error);
+        }
+      }
+    };
+    syncCartToBackend();
+  }, [items, isAuthenticated, user]);
+
   const addItem = (product: Product, quantity = 1) => {
     setItems(currentItems => {
       const existingItem = currentItems.find(item => item.product.id === product.id);
-      
       if (existingItem) {
-        // Update quantity if item already exists
-        const updatedItems = currentItems.map(item => 
-          item.product.id === product.id 
-            ? { ...item, quantity: item.quantity + quantity } 
+        const updatedItems = currentItems.map(item =>
+          item.product.id === product.id
+            ? { ...item, quantity: item.quantity + quantity }
             : item
         );
         toast.success(`Updated ${product.name} quantity in cart`);
         return updatedItems;
       } else {
-        // Add new item
         toast.success(`Added ${product.name} to cart`);
         return [...currentItems, { product, quantity }];
       }
@@ -85,11 +147,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       removeItem(productId);
       return;
     }
-    
-    setItems(currentItems => 
-      currentItems.map(item => 
-        item.product.id === productId 
-          ? { ...item, quantity } 
+    setItems(currentItems =>
+      currentItems.map(item =>
+        item.product.id === productId
+          ? { ...item, quantity }
           : item
       )
     );
@@ -100,11 +161,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     toast.success('Cart cleared');
   };
 
-  // Calculate derived values
   const totalItems = items.reduce((total, item) => total + item.quantity, 0);
-  
+
   const totalPrice = items.reduce(
-    (total, item) => total + item.product.price * item.quantity, 
+    (total, item) => total + item.product.price * item.quantity,
     0
   );
 
@@ -118,6 +178,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearCart,
         totalItems,
         totalPrice,
+        setItems,
       }}
     >
       {children}

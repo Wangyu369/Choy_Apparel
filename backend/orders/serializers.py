@@ -1,6 +1,5 @@
-
 from rest_framework import serializers
-from .models import Order, OrderItem
+from .models import Order, OrderItem, CartItem
 from products.serializers import ProductListSerializer
 from products.models import Product
 
@@ -75,3 +74,15 @@ class OrderCreateSerializer(serializers.Serializer):
                 continue
         
         return order
+
+
+# Serializer for CartItem model
+class CartItemSerializer(serializers.ModelSerializer):
+    product_details = ProductListSerializer(source='product', read_only=True)
+
+    class Meta:
+        model = CartItem
+        fields = ('id', 'product', 'product_details', 'quantity')
+        extra_kwargs = {
+            'product': {'write_only': True}
+        }

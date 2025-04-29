@@ -1,4 +1,3 @@
-
 from django.db import models
 import uuid
 from django.conf import settings
@@ -57,3 +56,23 @@ class OrderItem(models.Model):
     @property
     def total(self):
         return self.price * self.quantity
+
+
+# New CartItem model for persistent user cart
+class CartItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='cart_items'
+    )
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'product')
+        ordering = ['-added_at']
+
+    def __str__(self):
+        return f"CartItem: {self.quantity} x {self.product.name} for {self.user.email}"

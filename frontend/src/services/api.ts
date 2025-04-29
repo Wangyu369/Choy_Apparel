@@ -10,18 +10,12 @@ axios.interceptors.request.use((config) => {
   return config;
 }, (error) => Promise.reject(error));
 
-/* Removed problematic imports for missing modules */
-// import { DjangoAddress } from 'utils/products.types';
-// import { DjangoOrderCreate, Order } from 'utils/products.types';
-// import { getBestSellers } from 'utils/products';
-
 // Define CartItem type for cart API calls
 export type CartItem = {
   product: {
     id: string;
     name: string;
     price: number;
-    // Add other product fields as needed
   };
   quantity: number;
 };
@@ -80,7 +74,7 @@ export const refreshAuthToken = async (): Promise<boolean> => {
     }
     
     console.log('Attempting to refresh token using refresh token');
-    const response = await fetch(`${API_URL}/token/refresh/`, {
+    const response = await fetch(`${API_URL}/auth/refresh/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh: refreshToken }),
@@ -111,18 +105,14 @@ export async function apiRequest<T>(
   let retryWithNewToken = false;
   
   try {
-    // If we're in a preview environment and this is a non-auth request, 
-    // use a small delay to avoid rate limiting
     if (isPreviewEnvironment() && !requireAuth) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     
-    // Ensure endpoint starts with a slash if it doesn't already
     const formattedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     const url = `${API_URL}${formattedEndpoint}`;
     console.log('Making API request to:', url, 'with method:', method, 'requireAuth:', requireAuth);
     
-    // Check if token exists when authentication is required
     if (requireAuth) {
       const token = getToken();
       if (!token) {
@@ -136,7 +126,6 @@ export async function apiRequest<T>(
     
     const headers = getHeaders(requireAuth);
     
-    // Debug the exact headers being sent
     if (requireAuth) {
       console.log('Auth header value:', headers['Authorization']);
     }
@@ -149,7 +138,6 @@ export async function apiRequest<T>(
     };
     
     if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      // Log detailed request payload for debugging
       console.log('Request payload:', deepStringify(data));
       options.body = JSON.stringify(data);
     }
@@ -167,36 +155,29 @@ export async function apiRequest<T>(
     
     console.log('API response status:', response.status);
     
-    // Handle unauthorized errors (expired token, etc.)
     if (response.status === 401) {
       console.error('Unauthorized response (401). Token may be invalid or expired.');
       
       if (!retryWithNewToken && requireAuth) {
-        // Try to refresh the token
         const refreshed = await refreshAuthToken();
         if (refreshed) {
           console.log('Token refreshed, retrying request with new token');
           retryWithNewToken = true;
-          // Retry the request with the new token
           return apiRequest(endpoint, method, data, requireAuth);
         } else {
-          // Clear invalid tokens
           localStorage.removeItem('authToken');
           localStorage.removeItem('refreshToken');
           throw new Error('Unauthorized: Please sign in again');
         }
       } else {
-        // Already tried refreshing or not requiring auth
         throw new Error('Unauthorized: Please sign in again');
       }
     }
     
-    // For successful requests with no content
     if (response.status === 204) {
       return {} as T;
     }
     
-    // Try to parse the JSON response
     let responseData;
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
@@ -208,7 +189,6 @@ export async function apiRequest<T>(
         throw new Error(`Invalid JSON response from server: ${e.message}`);
       }
     } else {
-      // Handle non-JSON responses
       const textResponse = await response.text();
       console.log('Non-JSON response:', textResponse);
       
@@ -219,7 +199,6 @@ export async function apiRequest<T>(
       throw new Error(`Server returned non-JSON response: ${textResponse}`);
     }
     
-    // Handle other error responses
     if (!response.ok) {
       let errorMessage = 'An unknown error occurred';
       
@@ -233,7 +212,6 @@ export async function apiRequest<T>(
         } else if (responseData.error) {
           errorMessage = responseData.error;
         } else if (typeof responseData === 'object') {
-          // Enhanced error handling for field errors - display detailed information
           const fieldErrors = Object.entries(responseData)
             .map(([field, errors]) => {
               if (Array.isArray(errors)) {
@@ -246,7 +224,6 @@ export async function apiRequest<T>(
             .join('; ');
           
           errorMessage = fieldErrors || 'Validation error';
-          // Log detailed error information
           console.error('API validation errors:', deepStringify(responseData));
         }
       }
@@ -258,23 +235,21 @@ export async function apiRequest<T>(
     return responseData as T;
   } catch (error) {
     console.error('API request failed:', error);     
-    // Handle token-related errors by clearing invalid tokens
     if (error instanceof Error && 
       (error.message.includes('token_not_valid') || 
        error.message.includes('Token is invalid') || 
        error.message.includes('Unauthorized'))) {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('refreshToken');
-  }
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('refreshToken');
+    }
     throw error;
   }
 }
 
 // Auth API endpoints
 export const authService = {
-  // Refresh the JWT using the refresh token
   refreshToken: (refreshToken: string) => {
-    return fetch(`${API_URL}/token/refresh/`, {
+    return fetch(`${API_URL}/auth/refresh/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh: refreshToken }),
@@ -318,7 +293,6 @@ export const authService = {
 // Product API endpoints
 
 export const productsService = {
-  // ...existing methods
   updateProductStock: (productId: string, newStock: number) =>
     apiRequest(`products/${productId}/`, 'PATCH', { stock: newStock }),
   getProducts: () => 
@@ -338,9 +312,7 @@ export const productsService = {
 };
 
 export const ordersService = {
-  // Cancel an order by sending POST to /orders/<orderId>/cancel/
   cancelOrder: (orderId: string) => apiRequest(`orders/${orderId}/cancel/`, 'POST'),
-  // ...existing methods
   updateOrderStatus: (orderId: string, status: string) =>
     apiRequest(`orders/${orderId}/`, 'PATCH', { status }),
   createOrder: (orderData: DjangoOrderCreate) => 
@@ -355,7 +327,6 @@ export const ordersService = {
   getOrderById: (id: string) => 
     apiRequest<Order>(`orders/${id}/`),
 
-  // Cart API endpoints to be added below
   getUserCart: () =>
     apiRequest<CartItem[]>('cart/', 'GET'),
 
