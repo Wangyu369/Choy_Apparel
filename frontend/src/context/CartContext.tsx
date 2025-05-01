@@ -35,6 +35,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { user, isAuthenticated, logout } = useAuth();
   const syncingRef = useRef(false);
   const initialLoadRef = useRef(true);
+  const lastSyncedItemsRef = useRef<CartItem[]>([]);
 
   const mergeCarts = (cartA: CartItem[], cartB: CartItem[]): CartItem[] => {
     const mergedMap = new Map<string, CartItem>();
@@ -64,9 +65,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (isAuthenticated && user) {
         try {
-          // Merge guest cart items into backend cart using mergeCart API
-          await ordersService.mergeCart(localCart);
-          // Fetch merged cart from backend
+          // Directly fetch backend cart without merging to avoid doubling
           const backendCart = await ordersService.getUserCart();
           console.log('Backend cart fetched on login:', backendCart);
           const mappedBackendCart = backendCart.map((item: any) => ({
@@ -74,16 +73,19 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
             quantity: item.quantity,
           }));
           setItems(mappedBackendCart);
-          // Clear localStorage cart after merging
+          lastSyncedItemsRef.current = mappedBackendCart; // Set last synced items on login
+          // Clear localStorage cart after fetching backend cart
           localStorage.removeItem('cart');
           initialLoadRef.current = false; // Mark initial load done
         } catch (error) {
           console.error('Failed to load user cart:', error);
           setItems(localCart);
+          lastSyncedItemsRef.current = localCart;
           initialLoadRef.current = false;
         }
       } else {
         setItems(localCart);
+        lastSyncedItemsRef.current = localCart;
         initialLoadRef.current = false;
       }
     };
@@ -96,6 +98,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setItems([]);
       localStorage.removeItem('cart');
       initialLoadRef.current = true;
+      lastSyncedItemsRef.current = [];
     }
   }, [isAuthenticated]);
 
@@ -118,12 +121,40 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const syncCartToBackend = async () => {
       try {
-        // Clear backend cart first to avoid quantity increments
-        await ordersService.clearCart();
-        // Add all items fresh
-        for (const item of items) {
-          await ordersService.addItemToCart(item.product.id, item.quantity);
+        const lastSyncedItems = lastSyncedItemsRef.current;
+        const currentItems = items;
+
+        // Helper to create a map from productId to CartItem
+        const mapByProductId = (arr: CartItem[]) => {
+          const map = new Map<string, CartItem>();
+          arr.forEach(item => map.set(item.product.id, item));
+          return map;
+        };
+
+        const lastMap = mapByProductId(lastSyncedItems);
+        const currentMap = mapByProductId(currentItems);
+
+        // Detect removed items (in last but not in current)
+        for (const [productId, lastItem] of lastMap.entries()) {
+          if (!currentMap.has(productId)) {
+            await ordersService.removeItemFromCart(productId);
+          }
         }
+
+        // Detect added or updated items
+        for (const [productId, currentItem] of currentMap.entries()) {
+          const lastItem = lastMap.get(productId);
+          if (!lastItem) {
+            // Added item
+            await ordersService.addItemToCart(productId, currentItem.quantity);
+          } else if (lastItem.quantity !== currentItem.quantity) {
+            // Updated quantity
+            await ordersService.updateItemQuantity(productId, currentItem.quantity);
+          }
+        }
+
+        // Update last synced items
+        lastSyncedItemsRef.current = currentItems;
       } catch (error: any) {
         console.error('Failed to sync cart to backend:', error);
         if (error.message.includes('Unauthorized')) {
