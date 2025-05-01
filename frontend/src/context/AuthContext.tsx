@@ -41,7 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const loadUser = async () => {
       try {
         const tokens = JSON.parse(localStorage.getItem('authTokens') || 'null');
-        const accessToken = tokens?.token || tokens?.access;
+        const accessToken = tokens?.access;
         const refreshToken = tokens?.refresh;
         const storedUser = localStorage.getItem('user');
         
@@ -111,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await authService.refreshToken(refreshTokenValue);
       if (response && (response.token || response.access)) {
-        localStorage.setItem('authTokens', JSON.stringify({ token: response.token || response.access, refresh: refreshTokenValue }));
+        localStorage.setItem('authTokens', JSON.stringify({ access: response.token || response.access, refresh: refreshTokenValue }));
       } else {
         throw new Error('No access token returned from refresh');
       }
@@ -138,7 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     try {
       const tokens = JSON.parse(localStorage.getItem('authTokens') || 'null');
-      const accessToken = tokens?.token || tokens?.access;
+      const accessToken = tokens?.access;
       if (!accessToken) {
         return await attemptTokenRefresh();
       }
@@ -160,7 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const response = await authService.signIn(email, password);
-      localStorage.setItem('authTokens', JSON.stringify({ token: response.token || response.access, refresh: response.refresh }));
+      localStorage.setItem('authTokens', JSON.stringify({ access: response.token || response.access || response['token'], refresh: response.refresh }));
       const userData = {
         id: response.user.id,
         email: response.user.email,
@@ -187,7 +187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const first_name = nameParts[0] || '';
       const last_name = nameParts.slice(1).join(' ') || '';
       const response = await authService.signUp(first_name, last_name, email, password);
-      localStorage.setItem('authTokens', JSON.stringify({ token: response.token || response.access, refresh: response.refresh }));
+      localStorage.setItem('authTokens', JSON.stringify({ access: response.token || response.access || response['token'], refresh: response.refresh }));
       const userData = {
         id: response.user.id,
         email: response.user.email,

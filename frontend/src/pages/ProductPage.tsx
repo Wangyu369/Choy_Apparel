@@ -18,7 +18,7 @@ const ProductPage = () => {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['product', productId],
+    queryKey: ['product', name],
     queryFn: () => (productId ? productsService.getProductById(productId) : Promise.resolve(null)),
     enabled: !!productId,
   });
@@ -85,8 +85,8 @@ const ProductPage = () => {
 
       <main className="container mx-auto px-4 py-12">
         <div className="mb-4">
-          <Link to={`/category/${product.category}`} className="text-sm text-muted-foreground hover:text-foreground">
-            &larr; Back to {product.category}
+          <Link to={`/category/${product.category_code}`} className="text-sm text-muted-foreground hover:text-foreground">
+            &larr; Back to {product.name}
           </Link>
         </div>
         

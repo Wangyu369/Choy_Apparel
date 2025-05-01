@@ -1,11 +1,10 @@
-
 import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import ProductGrid from '@/components/ProductGrid';
-import { productsService } from '@/services/api';
+import ProductGrid from '../components/ProductGrid';
+import { productsService } from '../services/api';
+import { getProductsByCategory } from '../utils/products';
 import { useQuery } from '@tanstack/react-query';
-import { getProductsByCategory } from '@/utils/products';
 
 const CategoryPage = () => {
   const { category } = useParams<{ category: string }>();
@@ -17,30 +16,32 @@ const CategoryPage = () => {
     queryKey: ['products', category],
     queryFn: () => {
       if (category) {
+        console.log('Fetching products for category:', category);
         return productsService.getProductsByCategory(category);
       }
       return Promise.resolve([]);
     },
     enabled: !!category,
+    staleTime: 5 * 60 * 1000, // cache data for 5 minutes to prevent empty fetch on back navigation
   });
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [category]);
-  
+
   if (!category) {
     return <div>Category not found</div>;
   }
-  
+
   const categoryTitle = category.charAt(0).toUpperCase() + category.slice(1);
-  
+
   return (
     <div className="min-h-screen">
       <Helmet>
         <title>{categoryTitle} | Choy Apparel</title>
         <meta name="description" content={`Shop the latest ${category} fashion at Choy Apparel`} />
       </Helmet>
-      
+
       <main className="container mx-auto px-4 py-12">
         <div className="mb-8">
           <h1 className="text-3xl font-bold">{categoryTitle}</h1>
@@ -48,7 +49,7 @@ const CategoryPage = () => {
             Discover our {category} collection, featuring the latest styles and trends.
           </p>
         </div>
-        
+
         {isLoading ? (
           <div>Loading products...</div>
         ) : error ? (

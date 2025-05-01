@@ -38,6 +38,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 cart_data = CartItemSerializer(cart_items, many=True).data
                 # Attach cart to response data
                 if isinstance(response.data, dict):
+                    # Rename 'token' to 'access' for frontend compatibility
+                    if 'token' in response.data:
+                        response.data['access'] = response.data.pop('token')
                     response.data['cart'] = cart_data
             logger.info(f"Login successful for email: {request.data.get('email')}")
             return response

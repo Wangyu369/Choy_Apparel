@@ -20,12 +20,77 @@ export type CartItem = {
   quantity: number;
 };
 
+// Define DjangoAddress type based on backend users.models.Address
+export type DjangoAddress = {
+  id: string;
+  user: string; // user id
+  first_name: string;
+  last_name: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  phone: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+// Define OrderItem type for order items
+export type OrderItem = {
+  id: string;
+  product: {
+    id: string;
+    name: string;
+    price: number;
+  };
+  quantity: number;
+  price: number;
+};
+
+// Define DjangoOrderCreate type based on backend orders.serializers.OrderCreateSerializer
+export type DjangoOrderCreate = {
+  items: {
+    product_id: string;
+    quantity: number;
+    price: number;
+  }[];
+  total_amount: number;
+  payment_method: 'paypal' | 'cod';
+  shipping_first_name: string;
+  shipping_last_name: string;
+  shipping_address: string;
+  shipping_city: string;
+  shipping_state: string;
+  shipping_zip: string;
+  shipping_phone: string;
+};
+
+// Define Order type based on backend orders.serializers.OrderSerializer
+export type Order = {
+  id: string;
+  total_amount: number;
+  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'canceled';
+  payment_method: 'paypal' | 'cod';
+  shipping_first_name: string;
+  shipping_last_name: string;
+  shipping_address: string;
+  shipping_city: string;
+  shipping_state: string;
+  shipping_zip: string;
+  shipping_phone: string;
+  items: OrderItem[];
+  created_at: string;
+  updated_at: string;
+};
+
 // Base API URL - you'll need to change this to your Django backend URL
 export const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
 // Helper to get the access token from localStorage
 export const getToken = () => {
   const tokens = JSON.parse(localStorage.getItem('authTokens') || 'null');
+  console.log('Retrieved token:', tokens?.access); // Debug log
   return tokens?.access || null;
 };
 
@@ -39,7 +104,7 @@ export const getHeaders = (includeAuth = true) => {
     const token = getToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
-      console.log('Added auth token to request headers');
+      console.log('Added auth token to request headers:', headers['Authorization']); // Debug log
     } else {
       console.log('No auth token available for request');
     }
@@ -102,148 +167,30 @@ export async function apiRequest<T>(
   data?: any, 
   requireAuth: boolean = true
 ): Promise<T> {
-  let retryWithNewToken = false;
+  const headers = getHeaders(requireAuth);
+  console.log('Request headers:', headers); // Debug log
   
-  try {
-    if (isPreviewEnvironment() && !requireAuth) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    
-    const formattedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    const url = `${API_URL}${formattedEndpoint}`;
-    console.log('Making API request to:', url, 'with method:', method, 'requireAuth:', requireAuth);
-    
-    if (requireAuth) {
-      const token = getToken();
-      if (!token) {
-        console.error('Authentication required but no token available');
-        const refreshed = await refreshAuthToken();
-        if (!refreshed) {
-          throw new Error('Unauthorized: Please sign in again');
-        }
-      }
-    }
-    
-    const headers = getHeaders(requireAuth);
-    
-    if (requireAuth) {
-      console.log('Auth header value:', headers['Authorization']);
-    }
-    console.log('Request headers:', headers);
-    
-    const options: RequestInit = {
-      method,
-      headers,
-      credentials: 'include',
-    };
-    
-    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      console.log('Request payload:', deepStringify(data));
-      options.body = JSON.stringify(data);
-    }
-    
-    console.log('Request options:', {
-      method: options.method,
-      headers: options.headers,
-      hasBody: !!options.body,
-    });
-    
-    const response = await fetch(url, options).catch(error => {
-      console.error('Network error during fetch:', error);
-      throw new Error(`Network error: ${error.message || 'Failed to connect to the server'}`);
-    });
-    
-    console.log('API response status:', response.status);
-    
-    if (response.status === 401) {
-      console.error('Unauthorized response (401). Token may be invalid or expired.');
-      
-      if (!retryWithNewToken && requireAuth) {
-        const refreshed = await refreshAuthToken();
-        if (refreshed) {
-          console.log('Token refreshed, retrying request with new token');
-          retryWithNewToken = true;
-          return apiRequest(endpoint, method, data, requireAuth);
-        } else {
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('refreshToken');
-          throw new Error('Unauthorized: Please sign in again');
-        }
-      } else {
-        throw new Error('Unauthorized: Please sign in again');
-      }
-    }
-    
-    if (response.status === 204) {
-      return {} as T;
-    }
-    
-    let responseData;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      try {
-        responseData = await response.json();
-        console.log('API response data:', deepStringify(responseData));
-      } catch (e) {
-        console.error('Failed to parse JSON response:', e);
-        throw new Error(`Invalid JSON response from server: ${e.message}`);
-      }
-    } else {
-      const textResponse = await response.text();
-      console.log('Non-JSON response:', textResponse);
-      
-      if (response.ok) {
-        return {} as T;
-      }
-      
-      throw new Error(`Server returned non-JSON response: ${textResponse}`);
-    }
-    
-    if (!response.ok) {
-      let errorMessage = 'An unknown error occurred';
-      
-      if (responseData) {
-        if (typeof responseData === 'string') {
-          errorMessage = responseData;
-        } else if (responseData.detail) {
-          errorMessage = responseData.detail;
-        } else if (responseData.message) {
-          errorMessage = responseData.message;
-        } else if (responseData.error) {
-          errorMessage = responseData.error;
-        } else if (typeof responseData === 'object') {
-          const fieldErrors = Object.entries(responseData)
-            .map(([field, errors]) => {
-              if (Array.isArray(errors)) {
-                return `${field}: ${errors.join(', ')}`;
-              } else if (typeof errors === 'object' && errors !== null) {
-                return `${field}: ${deepStringify(errors)}`;
-              }
-              return `${field}: ${errors}`;
-            })
-            .join('; ');
-          
-          errorMessage = fieldErrors || 'Validation error';
-          console.error('API validation errors:', deepStringify(responseData));
-        }
-      }
-      
-      console.error('API request failed with error:', errorMessage, deepStringify(responseData));
-      throw new Error(errorMessage);
-    }
-    
-    return responseData as T;
-  } catch (error) {
-    console.error('API request failed:', error);     
-    if (error instanceof Error && 
-      (error.message.includes('token_not_valid') || 
-       error.message.includes('Token is invalid') || 
-       error.message.includes('Unauthorized'))) {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('refreshToken');
-    }
-    throw error;
+  const options: RequestInit = {
+    method,
+    headers,
+    // Removed credentials: 'include' because JWT is sent via Authorization header, not cookies
+  };
+  
+  if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+    options.body = JSON.stringify(data);
   }
+  
+  const url = `${API_URL}/${endpoint}`;
+  console.log('Making API request to:', url); // Debug log
+  
+  const response = await fetch(url, options);
+  console.log('Response status:', response.status); // Debug log
+  
+  if (response.status === 401) {
+    console.error('Unauthorized: Token may be missing or invalid');
+  }
+  
+  return response.json();
 }
 
 // Auth API endpoints
@@ -259,18 +206,16 @@ export const authService = {
     });
   },
   signIn: (email: string, password: string) => {
-    console.log('Attempting to sign in with email:', email);
-    return apiRequest<{ token: string; refresh: string; user: any }>('auth/login/', 'POST', { email, password }, false);
+    return apiRequest<{ token: string; refresh: string; user: any }>('auth/login/', 'POST', { email, password });
   },
-  
+
   signUp: (first_name: string, last_name: string, email: string, password: string) => {
-    console.log('Signing up with:', { first_name, last_name, email, password });
-    return apiRequest<{ token: string; refresh: string; user: any }>('auth/register/', 'POST', { 
-      first_name, 
-      last_name, 
-      email, 
+    return apiRequest<{ token: string; refresh: string; user: any }>('auth/register/', 'POST', {
+      first_name,
+      last_name,
+      email,
       password,
-      password_confirm: password
+      password_confirm: password,
     }, false);
   },
   
@@ -312,6 +257,7 @@ export const productsService = {
 };
 
 export const ordersService = {
+  clearCart: () => apiRequest('orders/cart/clear/', 'POST'),
   cancelOrder: (orderId: string) => apiRequest(`orders/${orderId}/cancel/`, 'POST'),
   updateOrderStatus: (orderId: string, status: string) =>
     apiRequest(`orders/${orderId}/`, 'PATCH', { status }),
@@ -328,17 +274,17 @@ export const ordersService = {
     apiRequest<Order>(`orders/${id}/`),
 
   getUserCart: () =>
-    apiRequest<CartItem[]>('cart/', 'GET'),
+    apiRequest<CartItem[]>('orders/cart/', 'GET',undefined, true ),
 
   addItemToCart: (productId: string, quantity: number) =>
-    apiRequest('cart/add/', 'POST', { product_id: productId, quantity }),
+    apiRequest('orders/cart/add/', 'POST', { product_id: productId, quantity }),
 
   removeItemFromCart: (productId: string) =>
-    apiRequest('cart/remove/', 'POST', { product_id: productId }),
+    apiRequest('orders/cart/remove/', 'POST', { product_id: productId }),
 
   updateItemQuantity: (productId: string, quantity: number) =>
-    apiRequest('cart/update/', 'POST', { product_id: productId, quantity }),
+    apiRequest('orders/cart/update-quantity/', 'POST', { product_id: productId, quantity }),
 
   mergeCart: (guestCart: CartItem[]) =>
-    apiRequest('cart/merge/', 'POST', { items: guestCart }),
+    apiRequest('orders/cart/merge/', 'POST', { items: guestCart }),
 };

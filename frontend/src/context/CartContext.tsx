@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { Product } from '../utils/products';
 import { useAuth } from './AuthContext';
@@ -32,7 +32,9 @@ export const useCart = () => {
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([]);
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
+  const syncingRef = useRef(false);
+  const initialLoadRef = useRef(true);
 
   const mergeCarts = (cartA: CartItem[], cartB: CartItem[]): CartItem[] => {
     const mergedMap = new Map<string, CartItem>();
@@ -74,45 +76,71 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setItems(mappedBackendCart);
           // Clear localStorage cart after merging
           localStorage.removeItem('cart');
+          initialLoadRef.current = false; // Mark initial load done
         } catch (error) {
           console.error('Failed to load user cart:', error);
           setItems(localCart);
+          initialLoadRef.current = false;
         }
       } else {
         setItems(localCart);
+        initialLoadRef.current = false;
       }
     };
     loadCart();
   }, [isAuthenticated, user]);
 
-// Add logout handler to clear cart on logout
-useEffect(() => {
-  if (!isAuthenticated) {
-    setItems([]);
-    localStorage.removeItem('cart');
-  }
-}, [isAuthenticated]);
+  // Add logout handler to clear cart on logout
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setItems([]);
+      localStorage.removeItem('cart');
+      initialLoadRef.current = true;
+    }
+  }, [isAuthenticated]);
 
-  // On sign-up, set cart from backend returned cart (handled in AuthContext or sign-up flow)
-
+  // Save cart to localStorage on items change
   useEffect(() => {
     localStorage.setItem('cart', JSON.stringify(items));
   }, [items]);
 
+  // Sync cart to backend with debounce and error handling
   useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    if (initialLoadRef.current) {
+      // Skip syncing on initial load to avoid quantity increments
+      return;
+    }
+
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+
     const syncCartToBackend = async () => {
-      if (isAuthenticated && user) {
-        try {
-          for (const item of items) {
-            await ordersService.addItemToCart(item.product.id, item.quantity);
-          }
-        } catch (error) {
-          console.error('Failed to sync cart to backend:', error);
+      try {
+        // Clear backend cart first to avoid quantity increments
+        await ordersService.clearCart();
+        // Add all items fresh
+        for (const item of items) {
+          await ordersService.addItemToCart(item.product.id, item.quantity);
         }
+      } catch (error: any) {
+        console.error('Failed to sync cart to backend:', error);
+        if (error.message.includes('Unauthorized')) {
+          // Force logout on unauthorized error
+          logout();
+          toast.error('Session expired. Please log in again.');
+        }
+      } finally {
+        syncingRef.current = false;
       }
     };
-    syncCartToBackend();
-  }, [items, isAuthenticated, user]);
+
+    // Debounce sync by 500ms
+    const debounceTimeout = setTimeout(syncCartToBackend, 500);
+
+    return () => clearTimeout(debounceTimeout);
+  }, [items, isAuthenticated, user, logout]);
 
   const addItem = (product: Product, quantity = 1) => {
     setItems(currentItems => {

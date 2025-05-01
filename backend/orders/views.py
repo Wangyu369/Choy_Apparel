@@ -39,13 +39,24 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class CartViewSet(viewsets.ViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+from rest_framework import mixins, viewsets, permissions
+from .models import CartItem
+from .serializers import CartItemSerializer
 
-    def list(self, request):
-        """Get all cart items for the logged-in user"""
-        cart_items = CartItem.objects.filter(user=request.user)
-        serializer = CartItemSerializer(cart_items, many=True)
+class CartViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = CartItemSerializer
+
+    def get_queryset(self):
+        return CartItem.objects.filter(user=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        # Explicit list method with logging to debug 404 issue
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"CartViewSet list called by user: {request.user}")
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['post'], url_path='add')

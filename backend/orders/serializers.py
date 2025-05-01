@@ -58,19 +58,23 @@ class OrderCreateSerializer(serializers.Serializer):
         # Create order items
         for item_data in items_data:
             product_id = item_data.pop('product_id')
+            quantity = item_data.get('quantity', 1)
             try:
                 product = Product.objects.get(id=product_id)
+                # Use product price from DB, ignore client price
                 OrderItem.objects.create(
                     order=order,
                     product=product,
-                    **item_data
+                    quantity=quantity,
+                    price=product.price
                 )
                 
                 # Update product stock
-                product.stock -= item_data['quantity']
+                product.stock -= quantity
                 product.save()
             except Product.DoesNotExist:
                 # Log the error but continue processing other items
+                # Could add logging here if needed
                 continue
         
         return order
